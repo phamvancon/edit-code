@@ -265,14 +265,15 @@
         
         <!-- Live Sandbox Browser Header inside UI -->
         <div class="bg-slate-950 border-b border-slate-800 px-3 py-2 flex items-center space-x-2 text-xs">
-          <div class="flex space-x-1.5">
+          <div class="flex space-x-1.5 shrink-0">
             <span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
             <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
             <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
           </div>
-          <div class="flex-1 bg-slate-900 border border-slate-800 rounded px-2 py-0.5 text-slate-400 flex items-center justify-between font-mono text-[10px]">
-            <span id="sandbox-url-bar">sandbox://app-environment/live-running.html</span>
-            <button onclick="runCodeSandbox()" class="hover:text-white" title="Tải lại trình duyệt ảo">
+          <div class="flex-1 bg-slate-900 border border-slate-800 rounded px-2 py-0.5 text-slate-400 flex items-center space-x-2 font-mono text-[10px]">
+            <i data-lucide="globe" class="w-3.5 h-3.5 text-slate-500 shrink-0"></i>
+            <input id="sandbox-url-bar" type="text" value="sandbox://app-environment/live-running.html" class="flex-1 bg-transparent border-none text-slate-300 focus:outline-none w-full" placeholder="Nhập url (ví dụ: https://example.com) hoặc chạy code..." />
+            <button onclick="handleUrlReload()" class="hover:text-white shrink-0" title="Tải lại trình duyệt">
               <i data-lucide="rotate-cw" class="w-3 h-3"></i>
             </button>
           </div>
@@ -280,7 +281,8 @@
 
         <!-- Render Sandbox iframe if web technology, or simulated CLI console if backend lang -->
         <div class="flex-1 bg-white relative" id="sandbox-wrapper">
-          <iframe id="sandbox-iframe" class="w-full h-full border-none bg-white" sandbox="allow-scripts allow-modals"></iframe>
+          <!-- Upgraded sandbox with allow-same-origin for online API access, forms and popups -->
+          <iframe id="sandbox-iframe" class="w-full h-full border-none bg-white" sandbox="allow-scripts allow-modals allow-same-origin allow-popups allow-forms allow-downloads"></iframe>
           
           <!-- Mock Terminal Console (hidden by default, shown for python/c++/java) -->
           <div id="mock-terminal" class="absolute inset-0 bg-slate-950 font-mono text-xs p-4 overflow-y-auto text-slate-300 hidden">
@@ -325,6 +327,7 @@
       setupEditorLineNumbers();
       initTabs();
       setupAutoRunListener();
+      setupUrlBarListener();
       
       // Load initial placeholder into preview on startup
       activeRunningCode = document.getElementById('code-input').placeholder;
@@ -430,6 +433,47 @@
       });
     }
 
+    function setupUrlBarListener() {
+      const urlBar = document.getElementById('sandbox-url-bar');
+      urlBar.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          handleUrlReload();
+        }
+      });
+    }
+
+    function handleUrlReload() {
+      const urlBar = document.getElementById('sandbox-url-bar');
+      const iframe = document.getElementById('sandbox-iframe');
+      const terminal = document.getElementById('mock-terminal');
+      let url = urlBar.value.trim();
+
+      if (!url) return;
+
+      // If it is our internal pseudo-protocols, just rerun sandbox code
+      if (url.startsWith('sandbox://') || url.startsWith('cli://')) {
+        runCodeSandbox();
+        return;
+      }
+
+      // Ensure HTTP/HTTPS protocol is present for internet browsing
+      if (!/^https?:\/\//i.test(url)) {
+        url = 'https://' + url;
+        urlBar.value = url;
+      }
+
+      // Show iframe and hide CLI terminal simulation
+      iframe.classList.remove('hidden');
+      terminal.classList.add('hidden');
+      
+      // Load the web page directly
+      iframe.removeAttribute('srcdoc');
+      iframe.src = url;
+      
+      // Navigate to the preview tab automatically
+      switchTab('preview');
+    }
+
     // Sandbox Core Engine (Executing Code dynamically)
     function runCodeSandbox() {
       const language = document.getElementById('lang-select').value;
@@ -446,7 +490,7 @@
       if (language === 'html' || language === 'css' || language === 'javascript' || language === 'other') {
         // Render Web environment in inside-sandbox
         iframe.classList.remove('hidden');
-        urlBar.textContent = `sandbox://local-browser/live-page.html`;
+        urlBar.value = `sandbox://local-browser/live-page.html`;
 
         let formattedDoc = "";
         if (language === 'html') {
@@ -520,12 +564,13 @@
         }
 
         // Write safely to iframe
+        iframe.removeAttribute('src');
         iframe.srcdoc = formattedDoc;
 
       } else {
         // Backend Compiler Simulation (Python, C++, Java, etc.)
         terminal.classList.remove('hidden');
-        urlBar.textContent = `cli://simulation-terminal/${language}-runtime`;
+        urlBar.value = `cli://simulation-terminal/${language}-runtime`;
         
         const terminalStdout = document.getElementById('terminal-stdout');
         terminalStdout.innerHTML = `
